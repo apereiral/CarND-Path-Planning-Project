@@ -5,6 +5,7 @@
 #include <iostream>
 #include <thread>
 #include <vector>
+#include <algorithm>
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
@@ -246,6 +247,7 @@ int main() {
 			bool traffic_left_bck = false;
 			bool traffic_right_frt = false;
 			bool traffic_right_bck = false;
+			bool changing_lanes = false;
 			
 			auto prev_path_size = previous_path_x.size();
 			auto ref_y = car_y;
@@ -264,6 +266,9 @@ int main() {
 				current_lane = floor(end_path_d/4.0);
 				current_speed = distance((ref_x - prev_ref_x), (ref_y - prev_ref_y), 0, 0);
 				current_speed = current_speed/0.02;
+				if(car_d > 4*current_lane + 3.5 || car_d < 4*current_lane + 0.5){
+					changing_lanes = true;
+				}
 			}
 			
 			double min_diff_ahead = 100000;
@@ -291,10 +296,10 @@ int main() {
 				
 				auto s_diff = vehicle_s_fwd - ref_s;
 				
-				if(vehicle_lane < current_lane){
+				if(vehicle_lane == current_lane - 1){
 					if(s_diff > -5 && s_diff < 40){
-						if(s_diff < 25){
-							if(s_diff > 0){
+						if(s_diff < 40){
+							if(s_diff > 15){
 								if(s_diff < min_diff_left_frt){
 									min_diff_left_frt = s_diff;
 									speed_left_frt = vehicle_speed;
@@ -315,38 +320,38 @@ int main() {
 							//}
 						}
 					}
-				} else {
-					if(vehicle_lane > current_lane){
-						if(s_diff > -5 && s_diff < 40){
-							if(s_diff < 25){
-								if(s_diff > 0){
-									if(s_diff < min_diff_right_frt){
-										min_diff_right_frt = s_diff;
-										speed_right_frt = vehicle_speed;
-										traffic_right_frt = true;
-									}
-								} else {
-									if(-s_diff < min_diff_right_bck){
-										min_diff_right_bck = -s_diff;
-										speed_right_bck = vehicle_speed;
-										traffic_right_bck = true;
-									}
+				}
+				if(vehicle_lane == current_lane + 1){
+					if(s_diff > -5 && s_diff < 40){
+						if(s_diff < 40){
+							if(s_diff > 15){
+								if(s_diff < min_diff_right_frt){
+									min_diff_right_frt = s_diff;
+									speed_right_frt = vehicle_speed;
+									traffic_right_frt = true;
 								}
 							} else {
-								//if(s_diff < min_diff_right_frt){
-								//	min_diff_right_frt = s_diff;
-								//	speed_right_frt = vehicle_speed;
-								//	traffic_right_frt = true;
-								//}
+								if(-s_diff < min_diff_right_bck){
+									min_diff_right_bck = -s_diff;
+									speed_right_bck = vehicle_speed;
+									traffic_right_bck = true;
+								}
 							}
+						} else {
+							//if(s_diff < min_diff_right_frt){
+							//	min_diff_right_frt = s_diff;
+							//	speed_right_frt = vehicle_speed;
+							//	traffic_right_frt = true;
+							//}
 						}
-					} else {
-						if(s_diff > 0 && s_diff < 25){
-							if(s_diff < min_diff_ahead){
-								min_diff_ahead = s_diff;
-								speed_ahead = vehicle_speed;
-								traffic_ahead = true;
-							}
+					}
+				}
+				if(vehicle_lane == current_lane){
+					if(s_diff > 0 && s_diff < 25){
+						if(s_diff < min_diff_ahead){
+							min_diff_ahead = s_diff;
+							speed_ahead = vehicle_speed;
+							traffic_ahead = true;
 						}
 					}
 				}
@@ -355,13 +360,40 @@ int main() {
 			target_speed = speed_ahead;
 			
 			if(traffic_ahead){
-				if(current_lane > 0 && !traffic_left_frt && !traffic_left_bck){
-					target_lane = current_lane - 1;
-					target_speed = speed_left_frt;
+				target_speed = min(22.0, target_speed + (min_diff_ahead - 20)/((50.0 - prev_path_size)*0.02));
+				if(current_lane > 0 && !traffic_left_bck && !changing_lanes){
+					if(!traffic_left_frt){
+						target_lane = current_lane - 1;
+						target_speed = speed_left_frt;
+					} else {
+						if(speed_left_frt > target_speed){
+							target_lane = current_lane - 1;
+							target_speed = speed_left_frt;
+						}
+					}
 				}
-				if(current_lane < 2 && !traffic_right_frt && !traffic_right_bck){
-					target_lane = current_lane + 1;
-					target_speed = speed_right_frt;
+				if(current_lane < 2 && !traffic_right_bck && !changing_lanes){
+					if(!traffic_right_frt){
+						target_lane = current_lane + 1;
+						target_speed = speed_right_frt;
+					} else {
+						if(speed_right_frt > target_speed){
+							target_lane = current_lane + 1;
+							target_speed = speed_right_frt;
+						}
+					}
+				}
+				if(current_lane == 1 && traffic_left_frt && traffic_right_frt && !traffic_left_bck && !traffic_right_bck){
+					vector<double> traffic_speeds = {speed_ahead, speed_left_frt, speed_right_frt};
+					sort(traffic_speeds.begin(), traffic_speeds.end());
+					if(traffic_speeds[0] == speed_left_frt){
+						target_lane = current_lane - 1;
+						target_speed = speed_left_frt;
+					}
+					if(traffic_speeds[0] == speed_right_frt){
+						target_lane = current_lane + 1;
+						target_speed = speed_right_frt;
+					}
 				}
 			}
 			
