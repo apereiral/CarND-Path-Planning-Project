@@ -176,10 +176,6 @@ int main() {
   // The max s value before wrapping around the track back to 0
   double max_s = 6945.554;
 
-  //bool keep_lane = true;
-  //bool change_lane_left = false;
-  //bool change_lane_right = false;
-
   ifstream in_map_(map_file_.c_str(), ifstream::in);
 
   string line;
@@ -297,9 +293,9 @@ int main() {
 				auto s_diff = vehicle_s_fwd - ref_s;
 				
 				if(vehicle_lane == current_lane - 1){
-					if(s_diff > -5 && s_diff < 40){
+					if(s_diff > -10 && s_diff < 40){
 						if(s_diff < 40){
-							if(s_diff > 15){
+							if(s_diff > 20){
 								if(s_diff < min_diff_left_frt){
 									min_diff_left_frt = s_diff;
 									speed_left_frt = vehicle_speed;
@@ -322,9 +318,9 @@ int main() {
 					}
 				}
 				if(vehicle_lane == current_lane + 1){
-					if(s_diff > -5 && s_diff < 40){
+					if(s_diff > -10 && s_diff < 40){
 						if(s_diff < 40){
-							if(s_diff > 15){
+							if(s_diff > 20){
 								if(s_diff < min_diff_right_frt){
 									min_diff_right_frt = s_diff;
 									speed_right_frt = vehicle_speed;
@@ -359,16 +355,30 @@ int main() {
 			
 			target_speed = speed_ahead;
 			
+			bool prep_change_lanes = false;
+			
 			if(traffic_ahead){
-				target_speed = min(22.0, target_speed + (min_diff_ahead - 20)/((50.0 - prev_path_size)*0.02));
+				if(min_diff_ahead < 10){
+					target_speed = min(22.0, target_speed + (min_diff_ahead - 15)/((50.0 - prev_path_size)*0.02));
+				}
 				if(current_lane > 0 && !traffic_left_bck && !changing_lanes){
 					if(!traffic_left_frt){
 						target_lane = current_lane - 1;
 						target_speed = speed_left_frt;
+						prep_change_lanes = true;
 					} else {
-						if(speed_left_frt > target_speed){
+						if(min_diff_left_frt > min_diff_ahead + 10){
 							target_lane = current_lane - 1;
 							target_speed = speed_left_frt;
+							cout << "aqui1" << endl;
+							prep_change_lanes = true;
+						} else {
+							if(speed_left_frt > target_speed + 5){
+								target_lane = current_lane - 1;
+								target_speed = speed_left_frt;
+								cout << "aqui2" << endl;
+								prep_change_lanes = true;
+							}
 						}
 					}
 				}
@@ -376,23 +386,55 @@ int main() {
 					if(!traffic_right_frt){
 						target_lane = current_lane + 1;
 						target_speed = speed_right_frt;
+						prep_change_lanes = true;
 					} else {
-						if(speed_right_frt > target_speed){
-							target_lane = current_lane + 1;
-							target_speed = speed_right_frt;
+						if(min_diff_right_frt > min_diff_ahead + 10){
+							if(prep_change_lanes){
+								if(min_diff_right_frt > min_diff_left_frt + 5){
+									target_lane = current_lane + 1;
+									target_speed = speed_right_frt;
+									cout << "aqui3" << endl;
+								}
+							} else {
+								target_lane = current_lane + 1;
+								target_speed = speed_right_frt;
+								cout << "aqui3" << endl;
+								prep_change_lanes = true;
+							}
+						} else {
+							if(!prep_change_lanes){
+								if(speed_right_frt > target_speed + 5){
+									target_lane = current_lane + 1;
+									target_speed = speed_right_frt;
+									cout << "aqui4" << endl;
+									prep_change_lanes = true;
+								}
+							} else {
+								if(min_diff_left_frt <= min_diff_ahead + 10){
+									if(speed_right_frt > speed_left_frt){
+										target_lane = current_lane + 1;
+										target_speed = speed_right_frt;
+										cout << "aqui4" << endl;
+										prep_change_lanes = true;
+									}
+								}
+							}
 						}
 					}
 				}
-				if(current_lane == 1 && traffic_left_frt && traffic_right_frt && !traffic_left_bck && !traffic_right_bck){
+				if(current_lane == 1 && traffic_left_frt && traffic_right_frt && !traffic_left_bck && !traffic_right_bck && !changing_lanes && !prep_change_lanes){
+					cout << "aqui5" << endl;
 					vector<double> traffic_speeds = {speed_ahead, speed_left_frt, speed_right_frt};
 					sort(traffic_speeds.begin(), traffic_speeds.end());
-					if(traffic_speeds[0] == speed_left_frt){
-						target_lane = current_lane - 1;
-						target_speed = speed_left_frt;
-					}
-					if(traffic_speeds[0] == speed_right_frt){
-						target_lane = current_lane + 1;
-						target_speed = speed_right_frt;
+					if(fabs(traffic_speeds[0] - target_speed) > 10){
+						if(traffic_speeds[0] == speed_left_frt){
+							target_lane = current_lane - 1;
+							target_speed = speed_left_frt;
+						}
+						if(traffic_speeds[0] == speed_right_frt){
+							target_lane = current_lane + 1;
+							target_speed = speed_right_frt;
+						}
 					}
 				}
 			}
@@ -438,9 +480,9 @@ int main() {
 			
 			for(auto i = 0; i < 50 - prev_path_size; i++){
 				if(current_speed < target_speed){
-					current_speed = min(target_speed, current_speed + 0.1);
+					current_speed = min(target_speed, current_speed + 0.15);
 				} else {
-					current_speed = max(target_speed, current_speed - 0.1);
+					current_speed = max(target_speed, current_speed - 0.15);
 				}
 				double target_x = current_x + current_speed*0.02;
 				double target_y = s(target_x);
