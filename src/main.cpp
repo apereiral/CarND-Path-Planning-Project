@@ -11,7 +11,7 @@
 #include "json.hpp"
 #include "spline.h"
 
-#define LARGE_NUM 100000 //large number
+#define LARGE_NUM 100000
 #define MAX_SPEED 22.0
 #define MAX_PATH_SIZE 50.0
 
@@ -180,6 +180,7 @@ int main() {
   // The max s value before wrapping around the track back to 0
   double max_s = 6945.554;
   
+  // FSM and planner state variables
   bool changing_lanes = false;
   double target_lane = -1;
   double target_speed = -1;
@@ -243,16 +244,17 @@ int main() {
           	// Sensor Fusion Data, a list of all other cars on the same side of the road.
           	auto sensor_fusion = j[1]["sensor_fusion"];
 			
-			// FSM boolean variables
+			// traffic state variables
 			bool traffic_ahead = false;
 			bool traffic_left_frt = false;
 			bool traffic_left_bck = false;
 			bool traffic_right_frt = false;
 			bool traffic_right_bck = false;
-			//bool changing_lanes = false;
+			
+			// prepare to change lanes bool flag
 			bool prep_change_lanes = false;
 			
-			// distance and speed variables for other cars in traffic
+			// distance and speed states for other cars in traffic
 			double min_diff_ahead = LARGE_NUM;
 			double min_diff_left_frt = LARGE_NUM;
 			double min_diff_left_bck = -LARGE_NUM;
@@ -276,6 +278,7 @@ int main() {
 			auto prev_ref_x = car_x - cos(car_yaw);
 			auto prev_ref_y = car_y - sin(car_yaw);
 			
+			// if in changing lanes state, but already reached target_lane, switch to not changing lanes state
 			if(changing_lanes && current_lane == target_lane){
 				changing_lanes = false;
 				cout << endl;
@@ -294,13 +297,14 @@ int main() {
 				current_speed = current_speed/0.02;
 			}
 			
+			// min and max distances from other cars in traffic to guarantee a safer route
 			double min_diff_bck = -7.0;
 			double max_diff_bck = 15.0;
-			double max_diff_frt = 30.0;//22.5;
+			double max_diff_frt = 30.0;
 			double max_diff_frt_sides = 60.0;
 			
 			// go through sensor_fusion list and record distances for closest cars
-			// set FSM booleans
+			// set traffic state variables
 			for(auto i = 0; i < sensor_fusion.size(); i++){
 				vector<double> vehicle = sensor_fusion[i];
 				auto vehicle_speed = distance(vehicle[3], vehicle[4], 0, 0);
@@ -311,58 +315,55 @@ int main() {
 				
 				auto s_diff = vehicle_s_fwd - ref_s;
 				
+				// if detected vehicle in lane to the left
 				if(vehicle_lane == current_lane - 1){
+					// check if vehicle meets safety conditions
 					if(s_diff > min_diff_bck && s_diff < max_diff_frt_sides){
-						//if(s_diff < 1000){
+						// check if vehicle is in front or besides/behind the car
 						if(s_diff > max_diff_bck){
+							// check if it's the closest vehicle in front to the left
 							if(s_diff < min_diff_left_frt){
 								min_diff_left_frt = s_diff;
 								speed_left_frt = vehicle_speed;
 								traffic_left_frt = true;
 							}
 						} else {
+							// check if it's the closest vehicle besides/behind to the left
 							if(s_diff > min_diff_left_bck){
 								min_diff_left_bck = s_diff;
 								speed_left_bck = vehicle_speed;
 								traffic_left_bck = true;
 							}
 						}
-						//} else {
-							//if(s_diff < min_diff_left_frt){
-							//	min_diff_left_frt = s_diff;
-							//	speed_left_frt = vehicle_speed;
-							//	traffic_left_frt = true;
-							//}
-						//}
 					}
 				}
+				// if detected vehicle in lane to the right
 				if(vehicle_lane == current_lane + 1){
+					// check if vehicle meets safety conditions
 					if(s_diff > min_diff_bck && s_diff < max_diff_frt_sides){
-						//if(s_diff < 1000){
+						// check if vehicle is in front or besides/behind the car
 						if(s_diff > max_diff_bck){
+							// check if it's the closest vehicle in front to the right
 							if(s_diff < min_diff_right_frt){
 								min_diff_right_frt = s_diff;
 								speed_right_frt = vehicle_speed;
 								traffic_right_frt = true;
 							}
 						} else {
+							// check if it's the closest vehicle besides/behind to the right
 							if(s_diff > min_diff_right_bck){
 								min_diff_right_bck = s_diff;
 								speed_right_bck = vehicle_speed;
 								traffic_right_bck = true;
 							}
 						}
-						//} else {
-							//if(s_diff < min_diff_right_frt){
-							//	min_diff_right_frt = s_diff;
-							//	speed_right_frt = vehicle_speed;
-							//	traffic_right_frt = true;
-							//}
-						//}
 					}
 				}
+				// if detected vehicle in same lane
 				if(vehicle_lane == current_lane){
+					// check if vehicle meets safety conditions
 					if(s_diff > 0 && s_diff < max_diff_frt){
+						// check if it's the closest vehicle in front
 						if(s_diff < min_diff_ahead){
 							min_diff_ahead = s_diff;
 							speed_ahead = vehicle_speed;
@@ -372,42 +373,45 @@ int main() {
 				}
 			}
 			
+			// if not changing lanes, keep lane unchanged and 
+			// change speed to reflect the most up to date traffic state
 			if(!changing_lanes){
 				target_lane = current_lane;
 				target_speed = speed_ahead;
 			}
 			
-			double critical_diff_ahead = 7.0;
-			double desired_diff_ahead = 20.0;
-			
+			// when there's traffic ahead
 			if(traffic_ahead){
-				//if(min_diff_ahead > desired_diff_ahead){
-				//	target_speed = MAX_SPEED;
-				//}
+				
+				// safety conditions for closest distance allowed 
+				// and desired distance to be from the vehicle in front
+				double critical_diff_ahead = 7.0;
+				double desired_diff_ahead = 20.0;
+				// if car doesn't meet safety conditions, set target speed accordingly
 				if(min_diff_ahead < critical_diff_ahead || min_diff_ahead > desired_diff_ahead){
 					target_speed = min(MAX_SPEED, target_speed + (min_diff_ahead - desired_diff_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
 				}
+				
+				// planner's brain - it checks several conditions for the traffic state variables and
+				// sets the FSM state and the targets (lane and speed) accordingly
 				if(current_lane > 0 && !traffic_left_bck && !changing_lanes){
 					if(!traffic_left_frt){
 						target_lane = current_lane - 1;
 						target_speed = speed_left_frt;
-						cout << "left0";
+						//cout << "left0"; //debug
 						prep_change_lanes = true;
 					} else {
 						if(min_diff_left_frt > min_diff_ahead + critical_diff_ahead){
 							target_lane = current_lane - 1;
 							target_speed = speed_left_frt;
 							target_speed = min(MAX_SPEED, target_speed + (min_diff_left_frt - critical_diff_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
-							//if(min_diff_left_frt > min_diff_ahead + 10){
-							//	target_speed = MAX_SPEED;
-							//}
-							cout << "left1";
+							//cout << "left1"; //debug
 							prep_change_lanes = true;
 						} else {
 							if(speed_left_frt > target_speed + 3){
 								target_lane = current_lane - 1;
 								target_speed = speed_left_frt;
-								cout << "left2";
+								//cout << "left2"; //debug
 								prep_change_lanes = true;
 							}
 						}
@@ -417,7 +421,7 @@ int main() {
 					if(!traffic_right_frt){
 						target_lane = current_lane + 1;
 						target_speed = speed_right_frt;
-						cout << "right0";
+						//cout << "right0"; //debug
 						prep_change_lanes = true;
 					} else {
 						if(min_diff_right_frt > min_diff_ahead + critical_diff_ahead){
@@ -426,19 +430,13 @@ int main() {
 									target_lane = current_lane + 1;
 									target_speed = speed_right_frt;
 									target_speed = min(MAX_SPEED, target_speed + (min_diff_right_frt - critical_diff_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
-									//if(min_diff_right_frt > min_diff_ahead + 10){
-									//	target_speed = MAX_SPEED;
-									//}
-									cout << "right1";
+									//cout << "right1"; //debug
 								}
 							} else {
 								target_lane = current_lane + 1;
 								target_speed = speed_right_frt;
 								target_speed = min(MAX_SPEED, target_speed + (min_diff_right_frt - critical_diff_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
-								//if(min_diff_right_frt > min_diff_ahead + 10){
-								//	target_speed = MAX_SPEED;
-								//}
-								cout << "right2";
+								//cout << "right2"; //debug
 								prep_change_lanes = true;
 							}
 						} else {
@@ -446,7 +444,7 @@ int main() {
 								if(speed_right_frt > target_speed + 3){
 									target_lane = current_lane + 1;
 									target_speed = speed_right_frt;
-									cout << "right3";
+									//cout << "right3"; //debug
 									prep_change_lanes = true;
 								}
 							} else {
@@ -454,8 +452,7 @@ int main() {
 									if(speed_right_frt > speed_left_frt){
 										target_lane = current_lane + 1;
 										target_speed = speed_right_frt;
-										cout << "right4";
-										//prep_change_lanes = true;
+										//cout << "right4"; //debug
 									}
 								}
 							}
@@ -469,13 +466,13 @@ int main() {
 						if(traffic_speeds[0] == speed_left_frt){
 							target_lane = current_lane - 1;
 							target_speed = speed_left_frt;
-							cout << "left3";
+							//cout << "left3"; //debug
 							prep_change_lanes = true;
 						}
 						if(traffic_speeds[0] == speed_right_frt){
 							target_lane = current_lane + 1;
 							target_speed = speed_right_frt;
-							cout << "right5";
+							//cout << "right5"; //debug
 							prep_change_lanes = true;
 						}
 					}
@@ -483,32 +480,36 @@ int main() {
 			} else {
 				if(current_lane == 0 && !traffic_right_bck && !changing_lanes){
 					if(min_diff_right_frt > max_diff_frt){
-						cout << "right6";
+						//cout << "right6"; //debug
 						target_lane = current_lane + 1;
 						prep_change_lanes = true; //make sure this is necessary!!! maybe safer without?
 					}
 				}
 				if(current_lane == 2 && !traffic_left_bck && !changing_lanes){
 					if(min_diff_left_frt > max_diff_frt){
-						cout << "left4";
+						//cout << "left4"; //debug
 						target_lane = current_lane - 1;
 						prep_change_lanes = true; //make sure this is necessary!!! maybe safer without?
 					}
 				}
 			}
 			
+			// if not changing lanes, check if planner is preparing to change
 			if(!changing_lanes){
 				changing_lanes = prep_change_lanes;
 			}
 			
+			// use spline library to calculate smooth path given the targets lane and speed
 			vector<double> spline_ptsx;
 			vector<double> spline_ptsy;
 			
+			// use at the beginning of the spline the car state variables calculated before
 			spline_ptsx.push_back(prev_ref_x);
 			spline_ptsx.push_back(ref_x);
 			spline_ptsy.push_back(prev_ref_y);
 			spline_ptsy.push_back(ref_y);
 			
+			// set 2 more spline points at a horizon of 30m and 60m
 			vector<double> next_spline_pt0 = getXY(ref_s + 30, (2 + 4*target_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
 			vector<double> next_spline_pt1 = getXY(ref_s + 60, (2 + 4*target_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
 			
@@ -518,6 +519,7 @@ int main() {
 			spline_ptsy.push_back(next_spline_pt0[1]);
 			spline_ptsy.push_back(next_spline_pt1[1]);
 			
+			// transform the points from global coordinates to car coordinates
 			for(auto i = 0; i < spline_ptsx.size(); i++){
 				double shift_x = spline_ptsx[i] - ref_x;
 				double shift_y = spline_ptsy[i] - ref_y;
@@ -526,20 +528,23 @@ int main() {
 				spline_ptsy[i] = (shift_x*sin(-ref_yaw) + shift_y*cos(-ref_yaw));
 			}
 			
+			// calculate spline
 			tk::spline s;
-			
 			s.set_points(spline_ptsx, spline_ptsy);
 
+			// path made up of (x,y) points that the car will visit sequentially every .02 seconds
           	vector<double> next_x_vals;
           	vector<double> next_y_vals;
 			
+			// use remaining coordinates from previously calculated path
 			for(auto i = 0; i < prev_path_size; i++){
 				next_x_vals.push_back(previous_path_x[i]);
 				next_y_vals.push_back(previous_path_y[i]);
 			}
 			
+			// calculate step distances, given the target speed, the time step and
+			// the safety limit for the acceleration
 			double current_x = 0;
-			
 			for(auto i = 0; i < MAX_PATH_SIZE - prev_path_size; i++){
 				if(current_speed < target_speed){
 					current_speed = min(target_speed, current_speed + 0.15);
@@ -551,6 +556,7 @@ int main() {
 				
 				current_x = target_x;
 				
+				// transform points back from car coordinates to global coordinates
 				double x_val = (target_x*cos(ref_yaw) - target_y*sin(ref_yaw));
 				double y_val = (target_x*sin(ref_yaw) + target_y*cos(ref_yaw));
 				
@@ -562,7 +568,7 @@ int main() {
 			}
 
 			json msgJson;
-          	// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
+          	// send path as json message to simulator
           	msgJson["next_x"] = next_x_vals;
           	msgJson["next_y"] = next_y_vals;
 
