@@ -281,7 +281,7 @@ int main() {
 			// if in changing lanes state, but already reached target_lane, switch to not changing lanes state
 			if(changing_lanes && current_lane == target_lane){
 				changing_lanes = false;
-				cout << endl;
+				//cout << endl; //debug
 			}
 			
 			// use previously calculated path for a smoother route
