@@ -255,9 +255,9 @@ int main() {
 			// distance and speed variables for other cars in traffic
 			double min_diff_ahead = LARGE_NUM;
 			double min_diff_left_frt = LARGE_NUM;
-			double min_diff_left_bck = LARGE_NUM;
+			double min_diff_left_bck = -LARGE_NUM;
 			double min_diff_right_frt = LARGE_NUM;
-			double min_diff_right_bck = LARGE_NUM;
+			double min_diff_right_bck = -LARGE_NUM;
 			
 			double speed_ahead = MAX_SPEED;
 			double speed_left_frt = MAX_SPEED;
@@ -278,6 +278,7 @@ int main() {
 			
 			if(changing_lanes && current_lane == target_lane){
 				changing_lanes = false;
+				cout << endl;
 			}
 			
 			// use previously calculated path for a smoother route
@@ -295,7 +296,8 @@ int main() {
 			
 			double min_diff_bck = -7.0;
 			double max_diff_bck = 15.0;
-			double max_diff_frt = 25.0;
+			double max_diff_frt = 30.0;//22.5;
+			double max_diff_frt_sides = 60.0;
 			
 			// go through sensor_fusion list and record distances for closest cars
 			// set FSM booleans
@@ -310,7 +312,7 @@ int main() {
 				auto s_diff = vehicle_s_fwd - ref_s;
 				
 				if(vehicle_lane == current_lane - 1){
-					if(s_diff > min_diff_bck){
+					if(s_diff > min_diff_bck && s_diff < max_diff_frt_sides){
 						//if(s_diff < 1000){
 						if(s_diff > max_diff_bck){
 							if(s_diff < min_diff_left_frt){
@@ -319,8 +321,8 @@ int main() {
 								traffic_left_frt = true;
 							}
 						} else {
-							if(-s_diff < min_diff_left_bck){
-								min_diff_left_bck = -s_diff;
+							if(s_diff > min_diff_left_bck){
+								min_diff_left_bck = s_diff;
 								speed_left_bck = vehicle_speed;
 								traffic_left_bck = true;
 							}
@@ -335,7 +337,7 @@ int main() {
 					}
 				}
 				if(vehicle_lane == current_lane + 1){
-					if(s_diff > min_diff_bck){
+					if(s_diff > min_diff_bck && s_diff < max_diff_frt_sides){
 						//if(s_diff < 1000){
 						if(s_diff > max_diff_bck){
 							if(s_diff < min_diff_right_frt){
@@ -344,8 +346,8 @@ int main() {
 								traffic_right_frt = true;
 							}
 						} else {
-							if(-s_diff < min_diff_right_bck){
-								min_diff_right_bck = -s_diff;
+							if(s_diff > min_diff_right_bck){
+								min_diff_right_bck = s_diff;
 								speed_right_bck = vehicle_speed;
 								traffic_right_bck = true;
 							}
@@ -375,33 +377,37 @@ int main() {
 				target_speed = speed_ahead;
 			}
 			
-			double critical_diff_ahead = 10.0;
-			double desired_diff_ahead = 15.0;
+			double critical_diff_ahead = 7.0;
+			double desired_diff_ahead = 20.0;
 			
 			if(traffic_ahead){
-				if(min_diff_ahead < critical_diff_ahead){
+				//if(min_diff_ahead > desired_diff_ahead){
+				//	target_speed = MAX_SPEED;
+				//}
+				if(min_diff_ahead < critical_diff_ahead || min_diff_ahead > desired_diff_ahead){
 					target_speed = min(MAX_SPEED, target_speed + (min_diff_ahead - desired_diff_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
 				}
 				if(current_lane > 0 && !traffic_left_bck && !changing_lanes){
 					if(!traffic_left_frt){
 						target_lane = current_lane - 1;
 						target_speed = speed_left_frt;
+						cout << "left0";
 						prep_change_lanes = true;
 					} else {
-						if(min_diff_left_frt > min_diff_ahead + 5){
+						if(min_diff_left_frt > min_diff_ahead + critical_diff_ahead){
 							target_lane = current_lane - 1;
 							target_speed = speed_left_frt;
 							target_speed = min(MAX_SPEED, target_speed + (min_diff_left_frt - critical_diff_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
 							//if(min_diff_left_frt > min_diff_ahead + 10){
 							//	target_speed = MAX_SPEED;
 							//}
-							cout << "aqui1" << endl;
+							cout << "left1";
 							prep_change_lanes = true;
 						} else {
-							if(speed_left_frt > target_speed + 5){
+							if(speed_left_frt > target_speed + 3){
 								target_lane = current_lane - 1;
 								target_speed = speed_left_frt;
-								cout << "aqui2" << endl;
+								cout << "left2";
 								prep_change_lanes = true;
 							}
 						}
@@ -411,18 +417,19 @@ int main() {
 					if(!traffic_right_frt){
 						target_lane = current_lane + 1;
 						target_speed = speed_right_frt;
+						cout << "right0";
 						prep_change_lanes = true;
 					} else {
-						if(min_diff_right_frt > min_diff_ahead + 5){
+						if(min_diff_right_frt > min_diff_ahead + critical_diff_ahead){
 							if(prep_change_lanes){
-								if(min_diff_right_frt > min_diff_left_frt + 5){
+								if(min_diff_right_frt > min_diff_left_frt + critical_diff_ahead){
 									target_lane = current_lane + 1;
 									target_speed = speed_right_frt;
 									target_speed = min(MAX_SPEED, target_speed + (min_diff_right_frt - critical_diff_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
 									//if(min_diff_right_frt > min_diff_ahead + 10){
 									//	target_speed = MAX_SPEED;
 									//}
-									cout << "aqui3" << endl;
+									cout << "right1";
 								}
 							} else {
 								target_lane = current_lane + 1;
@@ -431,23 +438,23 @@ int main() {
 								//if(min_diff_right_frt > min_diff_ahead + 10){
 								//	target_speed = MAX_SPEED;
 								//}
-								cout << "aqui4" << endl;
+								cout << "right2";
 								prep_change_lanes = true;
 							}
 						} else {
 							if(!prep_change_lanes){
-								if(speed_right_frt > target_speed + 5){
+								if(speed_right_frt > target_speed + 3){
 									target_lane = current_lane + 1;
 									target_speed = speed_right_frt;
-									cout << "aqui5" << endl;
+									cout << "right3";
 									prep_change_lanes = true;
 								}
 							} else {
-								if(min_diff_left_frt <= min_diff_ahead + 5){
+								if(min_diff_left_frt <= min_diff_ahead + critical_diff_ahead){
 									if(speed_right_frt > speed_left_frt){
 										target_lane = current_lane + 1;
 										target_speed = speed_right_frt;
-										cout << "aqui6" << endl;
+										cout << "right4";
 										//prep_change_lanes = true;
 									}
 								}
@@ -456,20 +463,36 @@ int main() {
 					}
 				}
 				if(current_lane == 1 && traffic_left_frt && traffic_right_frt && !traffic_left_bck && !traffic_right_bck && !changing_lanes && !prep_change_lanes){
-					cout << "aqui7" << endl;
 					vector<double> traffic_speeds = {speed_ahead, speed_left_frt, speed_right_frt};
 					sort(traffic_speeds.begin(), traffic_speeds.end());
 					if(fabs(traffic_speeds[0] - target_speed) > 10){
 						if(traffic_speeds[0] == speed_left_frt){
 							target_lane = current_lane - 1;
 							target_speed = speed_left_frt;
+							cout << "left3";
 							prep_change_lanes = true;
 						}
 						if(traffic_speeds[0] == speed_right_frt){
 							target_lane = current_lane + 1;
 							target_speed = speed_right_frt;
+							cout << "right5";
 							prep_change_lanes = true;
 						}
+					}
+				}
+			} else {
+				if(current_lane == 0 && !traffic_right_bck && !changing_lanes){
+					if(min_diff_right_frt > max_diff_frt){
+						cout << "right6";
+						target_lane = current_lane + 1;
+						prep_change_lanes = true; //make sure this is necessary!!! maybe safer without?
+					}
+				}
+				if(current_lane == 2 && !traffic_left_bck && !changing_lanes){
+					if(min_diff_left_frt > max_diff_frt){
+						cout << "left4";
+						target_lane = current_lane - 1;
+						prep_change_lanes = true; //make sure this is necessary!!! maybe safer without?
 					}
 				}
 			}
