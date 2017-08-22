@@ -11,6 +11,10 @@
 #include "json.hpp"
 #include "spline.h"
 
+#define LARGE_NUM 100000 //large number
+#define MAX_SPEED 22.0
+#define MAX_PATH_SIZE 50.0
+
 using namespace std;
 
 // for convenience
@@ -43,7 +47,7 @@ double distance(double x1, double y1, double x2, double y2)
 int ClosestWaypoint(double x, double y, vector<double> maps_x, vector<double> maps_y)
 {
 
-	double closestLen = 100000; //large number
+	double closestLen = LARGE_NUM;
 	int closestWaypoint = 0;
 
 	for(int i = 0; i < maps_x.size(); i++)
@@ -249,17 +253,17 @@ int main() {
 			bool prep_change_lanes = false;
 			
 			// distance and speed variables for other cars in traffic
-			double min_diff_ahead = 100000;
-			double min_diff_left_frt = 100000;
-			double min_diff_left_bck = 100000;
-			double min_diff_right_frt = 100000;
-			double min_diff_right_bck = 100000;
+			double min_diff_ahead = LARGE_NUM;
+			double min_diff_left_frt = LARGE_NUM;
+			double min_diff_left_bck = LARGE_NUM;
+			double min_diff_right_frt = LARGE_NUM;
+			double min_diff_right_bck = LARGE_NUM;
 			
-			double speed_ahead = 22;
-			double speed_left_frt = 22;
-			double speed_left_bck = 22;
-			double speed_right_frt = 22;
-			double speed_right_bck = 22;
+			double speed_ahead = MAX_SPEED;
+			double speed_left_frt = MAX_SPEED;
+			double speed_left_bck = MAX_SPEED;
+			double speed_right_frt = MAX_SPEED;
+			double speed_right_bck = MAX_SPEED;
 			
 			// car state variables			
 			auto current_lane = floor(car_d/4.0);
@@ -289,6 +293,10 @@ int main() {
 				current_speed = current_speed/0.02;
 			}
 			
+			double min_diff_bck = -7.0;
+			double max_diff_bck = 15.0;
+			double max_diff_frt = 25.0;
+			
 			// go through sensor_fusion list and record distances for closest cars
 			// set FSM booleans
 			for(auto i = 0; i < sensor_fusion.size(); i++){
@@ -302,57 +310,57 @@ int main() {
 				auto s_diff = vehicle_s_fwd - ref_s;
 				
 				if(vehicle_lane == current_lane - 1){
-					if(s_diff > -7 && s_diff < 1000){
-						if(s_diff < 1000){
-							if(s_diff > 10){
-								if(s_diff < min_diff_left_frt){
-									min_diff_left_frt = s_diff;
-									speed_left_frt = vehicle_speed;
-									traffic_left_frt = true;
-								}
-							} else {
-								if(-s_diff < min_diff_left_bck){
-									min_diff_left_bck = -s_diff;
-									speed_left_bck = vehicle_speed;
-									traffic_left_bck = true;
-								}
+					if(s_diff > min_diff_bck){
+						//if(s_diff < 1000){
+						if(s_diff > max_diff_bck){
+							if(s_diff < min_diff_left_frt){
+								min_diff_left_frt = s_diff;
+								speed_left_frt = vehicle_speed;
+								traffic_left_frt = true;
 							}
 						} else {
+							if(-s_diff < min_diff_left_bck){
+								min_diff_left_bck = -s_diff;
+								speed_left_bck = vehicle_speed;
+								traffic_left_bck = true;
+							}
+						}
+						//} else {
 							//if(s_diff < min_diff_left_frt){
 							//	min_diff_left_frt = s_diff;
 							//	speed_left_frt = vehicle_speed;
 							//	traffic_left_frt = true;
 							//}
-						}
+						//}
 					}
 				}
 				if(vehicle_lane == current_lane + 1){
-					if(s_diff > -7 && s_diff < 1000){
-						if(s_diff < 1000){
-							if(s_diff > 10){
-								if(s_diff < min_diff_right_frt){
-									min_diff_right_frt = s_diff;
-									speed_right_frt = vehicle_speed;
-									traffic_right_frt = true;
-								}
-							} else {
-								if(-s_diff < min_diff_right_bck){
-									min_diff_right_bck = -s_diff;
-									speed_right_bck = vehicle_speed;
-									traffic_right_bck = true;
-								}
+					if(s_diff > min_diff_bck){
+						//if(s_diff < 1000){
+						if(s_diff > max_diff_bck){
+							if(s_diff < min_diff_right_frt){
+								min_diff_right_frt = s_diff;
+								speed_right_frt = vehicle_speed;
+								traffic_right_frt = true;
 							}
 						} else {
+							if(-s_diff < min_diff_right_bck){
+								min_diff_right_bck = -s_diff;
+								speed_right_bck = vehicle_speed;
+								traffic_right_bck = true;
+							}
+						}
+						//} else {
 							//if(s_diff < min_diff_right_frt){
 							//	min_diff_right_frt = s_diff;
 							//	speed_right_frt = vehicle_speed;
 							//	traffic_right_frt = true;
 							//}
-						}
+						//}
 					}
 				}
 				if(vehicle_lane == current_lane){
-					if(s_diff > 0 && s_diff < 25){
+					if(s_diff > 0 && s_diff < max_diff_frt){
 						if(s_diff < min_diff_ahead){
 							min_diff_ahead = s_diff;
 							speed_ahead = vehicle_speed;
@@ -367,9 +375,12 @@ int main() {
 				target_speed = speed_ahead;
 			}
 			
+			double critical_diff_ahead = 10.0;
+			double desired_diff_ahead = 15.0;
+			
 			if(traffic_ahead){
-				if(min_diff_ahead < 10){
-					target_speed = min(22.0, target_speed + (min_diff_ahead - 15)/((50.0 - prev_path_size)*0.02));
+				if(min_diff_ahead < critical_diff_ahead){
+					target_speed = min(MAX_SPEED, target_speed + (min_diff_ahead - desired_diff_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
 				}
 				if(current_lane > 0 && !traffic_left_bck && !changing_lanes){
 					if(!traffic_left_frt){
@@ -380,16 +391,17 @@ int main() {
 						if(min_diff_left_frt > min_diff_ahead + 5){
 							target_lane = current_lane - 1;
 							target_speed = speed_left_frt;
-							if(min_diff_left_frt > min_diff_ahead + 10){
-								target_speed = 22;
-							}
-							//cout << "aqui1" << endl;
+							target_speed = min(MAX_SPEED, target_speed + (min_diff_left_frt - critical_diff_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
+							//if(min_diff_left_frt > min_diff_ahead + 10){
+							//	target_speed = MAX_SPEED;
+							//}
+							cout << "aqui1" << endl;
 							prep_change_lanes = true;
 						} else {
 							if(speed_left_frt > target_speed + 5){
 								target_lane = current_lane - 1;
 								target_speed = speed_left_frt;
-								//cout << "aqui2" << endl;
+								cout << "aqui2" << endl;
 								prep_change_lanes = true;
 							}
 						}
@@ -406,18 +418,20 @@ int main() {
 								if(min_diff_right_frt > min_diff_left_frt + 5){
 									target_lane = current_lane + 1;
 									target_speed = speed_right_frt;
-									if(min_diff_right_frt > min_diff_ahead + 10){
-										target_speed = 22;
-									}
-									//cout << "aqui3" << endl;
+									target_speed = min(MAX_SPEED, target_speed + (min_diff_right_frt - critical_diff_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
+									//if(min_diff_right_frt > min_diff_ahead + 10){
+									//	target_speed = MAX_SPEED;
+									//}
+									cout << "aqui3" << endl;
 								}
 							} else {
 								target_lane = current_lane + 1;
 								target_speed = speed_right_frt;
-								if(min_diff_right_frt > min_diff_ahead + 10){
-									target_speed = 22;
-								}
-								//cout << "aqui3" << endl;
+								target_speed = min(MAX_SPEED, target_speed + (min_diff_right_frt - critical_diff_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
+								//if(min_diff_right_frt > min_diff_ahead + 10){
+								//	target_speed = MAX_SPEED;
+								//}
+								cout << "aqui4" << endl;
 								prep_change_lanes = true;
 							}
 						} else {
@@ -425,7 +439,7 @@ int main() {
 								if(speed_right_frt > target_speed + 5){
 									target_lane = current_lane + 1;
 									target_speed = speed_right_frt;
-									//cout << "aqui4" << endl;
+									cout << "aqui5" << endl;
 									prep_change_lanes = true;
 								}
 							} else {
@@ -433,7 +447,7 @@ int main() {
 									if(speed_right_frt > speed_left_frt){
 										target_lane = current_lane + 1;
 										target_speed = speed_right_frt;
-										//cout << "aqui4" << endl;
+										cout << "aqui6" << endl;
 										//prep_change_lanes = true;
 									}
 								}
@@ -442,7 +456,7 @@ int main() {
 					}
 				}
 				if(current_lane == 1 && traffic_left_frt && traffic_right_frt && !traffic_left_bck && !traffic_right_bck && !changing_lanes && !prep_change_lanes){
-					//cout << "aqui5" << endl;
+					cout << "aqui7" << endl;
 					vector<double> traffic_speeds = {speed_ahead, speed_left_frt, speed_right_frt};
 					sort(traffic_speeds.begin(), traffic_speeds.end());
 					if(fabs(traffic_speeds[0] - target_speed) > 10){
@@ -503,7 +517,7 @@ int main() {
 			
 			double current_x = 0;
 			
-			for(auto i = 0; i < 50 - prev_path_size; i++){
+			for(auto i = 0; i < MAX_PATH_SIZE - prev_path_size; i++){
 				if(current_speed < target_speed){
 					current_speed = min(target_speed, current_speed + 0.15);
 				} else {
