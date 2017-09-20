@@ -298,11 +298,9 @@ int main() {
 				current_speed = current_speed/0.02;
 			}
 			
-			// min and max distances from other cars in traffic to guarantee a safer route
+			// front and back visible horizons to detect other cars in traffic
 			double min_diff_bck = -25.0;
-			//double max_diff_bck = 13.0;
-			double max_diff_frt = 50.0;//30.0;
-			//double max_diff_frt_sides = 60.0;//100.0;
+			double max_diff_frt = 70.0;//30.0;
 			
 			// go through sensor_fusion list and record distances for closest cars
 			// set traffic state variables
@@ -318,7 +316,7 @@ int main() {
 				
 				// if detected vehicle in lane to the left
 				if(vehicle_lane == current_lane - 1){
-					// check if vehicle meets safety conditions
+					// check if vehicle in visible range
 					if(s_diff > min_diff_bck && s_diff < max_diff_frt){
 						// check if vehicle is in front or besides/behind the car
 						if(s_diff > 0){
@@ -326,21 +324,19 @@ int main() {
 							if(s_diff < min_diff_left_frt){
 								min_diff_left_frt = s_diff;
 								speed_left_frt = vehicle_speed;
-								//traffic_left_frt = true;
 							}
 						} else {
 							// check if it's the closest vehicle besides/behind to the left
 							if(s_diff > min_diff_left_bck){
 								min_diff_left_bck = s_diff;
 								speed_left_bck = vehicle_speed;
-								//traffic_left_bck = true;
 							}
 						}
 					}
 				}
 				// if detected vehicle in lane to the right
 				if(vehicle_lane == current_lane + 1){
-					// check if vehicle meets safety conditions
+					// check if vehicle in visible range
 					if(s_diff > min_diff_bck && s_diff < max_diff_frt){
 						// check if vehicle is in front or besides/behind the car
 						if(s_diff > 0){
@@ -348,27 +344,24 @@ int main() {
 							if(s_diff < min_diff_right_frt){
 								min_diff_right_frt = s_diff;
 								speed_right_frt = vehicle_speed;
-								//traffic_right_frt = true;
 							}
 						} else {
 							// check if it's the closest vehicle besides/behind to the right
 							if(s_diff > min_diff_right_bck){
 								min_diff_right_bck = s_diff;
 								speed_right_bck = vehicle_speed;
-								//traffic_right_bck = true;
 							}
 						}
 					}
 				}
 				// if detected vehicle in same lane
 				if(vehicle_lane == current_lane){
-					// check if vehicle meets safety conditions
+					// check if vehicle in visible range
 					if(s_diff > 0 && s_diff < max_diff_frt){
 						// check if it's the closest vehicle in front
 						if(s_diff < min_diff_ahead){
 							min_diff_ahead = s_diff;
 							speed_ahead = vehicle_speed;
-							//traffic_ahead = true;
 						}
 					}
 				}
@@ -381,22 +374,20 @@ int main() {
 				target_speed = speed_ahead;
 			}
 			
+			// if on the middle lane, record distance to car ahead
 			if(current_lane == 1){
 				last_diff_lane1 = min_diff_ahead;
 			}
 			
-			// safety conditions for closest distance allowed 
-			// and desired distance to be from the vehicle in front
-			double critical_diff_ahead = 12.5;//13.0;
-			double desired_diff_ahead = 17.5;//20.0;
-			
-			auto time_to_move = 1.;//(12 - min_diff_ahead)/(max(-5.0,speed_ahead - MAX_SPEED));
+			// calculate possible traffic gaps 1 second in the future
+			auto time_to_move = 1.;
 			auto final_position_left_frt = min_diff_left_frt + (speed_left_frt - current_speed)*time_to_move;
 			auto final_position_left_bck = min_diff_left_bck + (speed_left_bck - current_speed)*time_to_move;
 			auto final_position_right_frt = min_diff_right_frt + (speed_right_frt - current_speed)*time_to_move;
 			auto final_position_right_bck = min_diff_right_bck + (speed_right_bck - current_speed)*time_to_move;
 			auto final_position_ahead = min_diff_ahead + (speed_ahead - current_speed)*time_to_move;
 			
+			// check if there's traffic ahead on the left or on the right
 			if(min_diff_left_frt < max_diff_frt){
 				traffic_left_frt = true;
 			}
@@ -404,6 +395,7 @@ int main() {
 				traffic_right_frt = true;
 			}
 			
+			// check if there's traffic besides/behind on the left or on the right
 			if(min_diff_left_bck > min_diff_bck){
 				if(min_diff_left_bck > -6 || final_position_left_bck > -6){
 					traffic_left_bck = true;
@@ -427,6 +419,7 @@ int main() {
 				}
 			}
 			
+			// state variables to determine which action to take
 			auto move_left = false;
 			auto move_right = false;
 			auto gap_ahead_left = false;
@@ -434,217 +427,147 @@ int main() {
 			auto is_faster_left = false;
 			auto is_faster_right = false;
 			
+			// safe distances constants
+			auto min_side_gap = 20.0;
+			auto target_dist_ahead = 14.5;
+			
+			// if on middle or right lane
 			if(current_lane > 0){
+				// if there's no traffic besides/behind on the left
 				if(!traffic_left_bck){
+					// if there's no traffic ahead on the left either
 					if(!traffic_left_frt){
 						move_left = true;
 					}
-					if(final_position_left_frt > final_position_ahead + 20){
+					// or if there's a gap on traffic greater than 20m
+					if(final_position_left_frt > final_position_ahead + min_side_gap){
 						move_left = true;
 						gap_ahead_left = true;
 					} else {
-						/*if(final_position_left_frt < -6){
+						// or else if car ahead on left is at a safe distance
+						if(min_diff_left_frt > min_side_gap){
 							move_left = true;
-						} else {*/
-							if(min_diff_left_frt > 18 && traffic_right_bck){
-								move_left = true;
-								is_faster_left = speed_left_frt > current_speed;
-							}
-						//}
+							is_faster_left = speed_left_frt > current_speed;
+						}
 					}
-					/*if(move_left){
-						prep_change_lanes = true;
-						target_lane = current_lane - 1;
-						target_speed = speed_left_frt;
-						//if(min_diff_left_frt > 25){
-						target_speed = min(MAX_SPEED, target_speed + (min_diff_left_frt - 14)/((MAX_PATH_SIZE - prev_path_size)*0.02));
-						//}
-						cout << "left1 " << target_speed << " "; //<< final_position_left << " " << min_diff_left_frt; //debug
-					}*/
 				}
 			}
+			// if on middle or left lane
 			if(current_lane < 2){
+				// if there's no traffic besides/behind on the right
 				if(!traffic_right_bck){
+					// if there's no traffic ahead on the right either
 					if(!traffic_right_frt){
 						move_right = true;
 					}
-					if(final_position_right_frt > final_position_ahead + 20){
+					// or if there's a gap on traffic greater than 20m
+					if(final_position_right_frt > final_position_ahead + min_side_gap){
 						move_right = true;
 						gap_ahead_right = true;
 					} else {
-						/*if(final_position_right_frt < -6){
+						// or else if car ahead on right is at a safe distance
+						if(min_diff_right_frt > min_side_gap){
 							move_right = true;
-						} else {*/
-							if(min_diff_right_frt > 18 && traffic_left_bck){
-								move_right = true;
-								is_faster_right = speed_right_frt > current_speed;
-							}
-						//}
+							is_faster_right = speed_right_frt > current_speed;
+						}
 					}
-					/*if(move_right){
-						prep_change_lanes = true;
-						target_lane = current_lane + 1;
-						target_speed = speed_right_frt;
-						//if(min_diff_right_frt > 25){
-						target_speed = min(MAX_SPEED, target_speed + (min_diff_right_frt - 14)/((MAX_PATH_SIZE - prev_path_size)*0.02));
-						//}
-						cout << "right1 " << target_speed << " "; //<< final_position_right << " " << min_diff_right_frt; //debug
-					}*/
 				}
 			}
 			
+			// if not in middle lane, check if it's possible to go back to middle lane:
+			// since the middle lane offers a greater number of path possibilities, the car
+			// is more likely to avoid traffic if it favors to stay in the middle lane
+			// as often as possible
 			if(current_lane != 1 && !changing_lanes){
+				// if on left lane
 				if(current_lane == 0){
+					// if still behind last seen car on middle lane
 					if(last_diff_lane1 > min_diff_right_frt){
 						last_diff_lane1 = min_diff_right_frt;
 					}
+					// if ahead of last seen car on middle lane and it's possible to move right
 					if(min_diff_right_frt > last_diff_lane1 && move_right){
 						//cout << "right0 " << min_diff_right_frt << " " << last_diff_lane1; //debug
 						target_lane = current_lane + 1;
 						target_speed = speed_right_frt;
-						//if(min_diff_right_frt > 25){
-							target_speed = min(MAX_SPEED, target_speed + (min_diff_right_frt - 14)/((MAX_PATH_SIZE - prev_path_size)*0.02));
-						//}
-						prep_change_lanes = true; //make sure this is necessary!!! maybe safer without?
+						target_speed = min(MAX_SPEED, target_speed + (min_diff_right_frt - target_dist_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
+						//prep_change_lanes = true; //make sure this is necessary!!! maybe safer without?
 					}
 				}
+				// if on right lane
 				if(current_lane == 2){
+					// if still behind last seen car on middle lane
 					if(last_diff_lane1 > min_diff_left_frt){
 						last_diff_lane1 = min_diff_left_frt;
 					}
+					// if ahead of last seen car on middle lane and it's possible to move left
 					if(min_diff_left_frt > last_diff_lane1 && move_left){
 						//cout << "left0 " << min_diff_left_frt << " " << last_diff_lane1; //debug
 						target_lane = current_lane - 1;
 						target_speed = speed_left_frt;
-						//if(min_diff_left_frt > 25){
-							target_speed = min(MAX_SPEED, target_speed + (min_diff_left_frt - 14)/((MAX_PATH_SIZE - prev_path_size)*0.02));
-						//}
-						prep_change_lanes = true; //make sure this is necessary!!! maybe safer without?
+						target_speed = min(MAX_SPEED, target_speed + (min_diff_left_frt - target_dist_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
+						//prep_change_lanes = true; //make sure this is necessary!!! maybe safer without?
 					}
 				}
 			}
 			
-			// when there's traffic ahead
+			// if there's traffic less than 25m ahead
 			if(min_diff_ahead < 25){
 				
-				//// safety conditions for closest distance allowed 
-				//// and desired distance to be from the vehicle in front
-				//double critical_diff_ahead = 13.0;
-				//double desired_diff_ahead = 20.0;
+				// safety conditions for closest distance allowed 
+				// and desired distance to be from the vehicle in front
+				double critical_diff_ahead = 12.5;
+				double desired_diff_ahead = 17.5;
+
 				// if car doesn't meet safety conditions, set target speed accordingly
 				if((min_diff_ahead < critical_diff_ahead || min_diff_ahead > desired_diff_ahead) && !changing_lanes){
-					target_speed = min(MAX_SPEED, target_speed + (min_diff_ahead - 15)/((MAX_PATH_SIZE - prev_path_size)*0.02));
+					target_speed = min(MAX_SPEED, target_speed + (min_diff_ahead - target_dist_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
 				}
 				if(changing_lanes && min_diff_ahead < 0.55*critical_diff_ahead){
 					target_speed = min(MAX_SPEED, target_speed + (min_diff_ahead - critical_diff_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
 				}
 				
-				if(!changing_lanes){ //&& min_diff_ahead > 12.5 && speed_ahead > MAX_SPEED){
-					/*auto time_to_move = 0.5;//(12 - min_diff_ahead)/(max(-5.0,speed_ahead - MAX_SPEED));
-					auto final_position_left_frt = min_diff_left_frt + (speed_left_frt - current_speed)*time_to_move;
-					auto final_position_left_bck = min_diff_left_bck + (speed_left_bck - current_speed)*time_to_move;
-					auto final_position_right_frt = min_diff_right_frt + (speed_right_frt - current_speed)*time_to_move;
-					auto final_position_right_bck = min_diff_right_bck + (speed_right_bck - current_speed)*time_to_move;
-					auto final_position_ahead = min_diff_ahead + (speed_ahead - current_speed)*time_to_move;
-					
-					auto move_left = false;
-					auto move_right = false;
-					auto gap_ahead_left = false;
-					auto gap_ahead_right = false;
-					
-					if(min_diff_left_bck > min_diff_bck){
-						if(min_diff_left_bck > -6 || final_position_left_bck > -6){
-							traffic_left_bck = true;
-						}
-						if(min_diff_left_frt - min_diff_left_bck < 25){
-							traffic_left_bck = true;
-						}
-						if(min_diff_left_frt < 10 || final_position_left_frt < 10){
-							traffic_left_bck = true;
-						}
+				// if car isn't currently changing lanes
+				if(!changing_lanes){
+					// if moving left is best option
+					if(move_left && (is_faster_left || gap_ahead_left)){
+						prep_change_lanes = true;
+						target_lane = current_lane - 1;
+						target_speed = speed_left_frt;
+						target_speed = min(MAX_SPEED, target_speed + (min_diff_left_frt - target_dist_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
+						//cout << "left1 " << is_faster_left << " " << gap_ahead_left << " "; //<< final_position_left << " " << min_diff_left_frt; //debug
 					}
-					if(min_diff_right_bck > min_diff_bck){
-						if(min_diff_right_bck > -6 || final_position_right_bck > -6){
-							traffic_right_bck = true;
-						}
-						if(min_diff_right_frt - min_diff_right_bck < 25){
-							traffic_right_bck = true;
-						}
-						if(min_diff_right_frt < 10 || final_position_right_frt < 10){
-							traffic_right_bck = true;
-						}
+					// if moving right is best option
+					if(move_right && (is_faster_right || gap_ahead_right)){
+						prep_change_lanes = true;
+						target_lane = current_lane + 1;
+						target_speed = speed_right_frt;
+						target_speed = min(MAX_SPEED, target_speed + (min_diff_right_frt - target_dist_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
+						//cout << "right1 " << is_faster_left << " " << gap_ahead_left << " "; //<< final_position_right << " " << min_diff_right_frt; //debug
 					}
-					
-					if(current_lane > 0){
-						if(!traffic_left_bck){
-							if(final_position_left_frt > final_position_ahead + 20){
-								move_left = true;
-								gap_ahead_left = true;
-							} else {
-								*//*if(final_position_left_frt < -6){
-									move_left = true;
-								} else {*//*
-									if(speed_left_frt > current_speed && min_diff_left_frt > 18 && traffic_right_bck){
-										move_left = true;
-									}
-								//}
-							}*/
-							if(move_left && (is_faster_left || gap_ahead_left)){
-								prep_change_lanes = true;
-								target_lane = current_lane - 1;
-								target_speed = speed_left_frt;
-								//if(min_diff_left_frt > 25){
-								target_speed = min(MAX_SPEED, target_speed + (min_diff_left_frt - 14)/((MAX_PATH_SIZE - prev_path_size)*0.02));
-								//}
-								//cout << "left1 " << is_faster_left << " " << gap_ahead_left << " "; //<< final_position_left << " " << min_diff_left_frt; //debug
-							}/*
-						}
-					}
-					if(current_lane < 2){
-						if(!traffic_right_bck){
-							if(final_position_right_frt > final_position_ahead + 20){
-								move_right = true;
-								gap_ahead_right = true;
-							} else {
-								*//*if(final_position_right_frt < -6){
-									move_right = true;
-								} else {*//*
-									if(speed_right_frt > current_speed && min_diff_right_frt > 18 && traffic_left_bck){
-										move_right = true;
-									}
-								//}
-							}*/
-							if(move_right && (is_faster_right || gap_ahead_right)){
-								prep_change_lanes = true;
-								target_lane = current_lane + 1;
-								target_speed = speed_right_frt;
-								//if(min_diff_right_frt > 25){
-								target_speed = min(MAX_SPEED, target_speed + (min_diff_right_frt - 14)/((MAX_PATH_SIZE - prev_path_size)*0.02));
-								//}
-								//cout << "right1 " << is_faster_left << " " << gap_ahead_left << " "; //<< final_position_right << " " << min_diff_right_frt; //debug
-							}/*
-						}
-					}*/
+					// if on middle lane and it's possible to move left and right
 					if(current_lane == 1 && move_left && move_right){
+						// check which traffic gap is bigger
 						if(gap_ahead_left && gap_ahead_right){
 							if(final_position_left_frt >= final_position_right_frt){
 								target_lane = current_lane - 1;
 								target_speed = speed_left_frt;
-								target_speed = min(MAX_SPEED, target_speed + (min_diff_left_frt - 14)/((MAX_PATH_SIZE - prev_path_size)*0.02));
+								target_speed = min(MAX_SPEED, target_speed + (min_diff_left_frt - target_dist_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
 								//cout << "left2 " << target_speed << " "; //<< final_position_left << " " << final_position_right; //debug
 							}
 						} else {
 							if(gap_ahead_left){
 								target_lane = current_lane - 1;
 								target_speed = speed_left_frt;
-								target_speed = min(MAX_SPEED, target_speed + (min_diff_left_frt - 14)/((MAX_PATH_SIZE - prev_path_size)*0.02));
+								target_speed = min(MAX_SPEED, target_speed + (min_diff_left_frt - target_dist_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
 								//cout << "left3 " << target_speed << " "; //<< final_position_left << " " << final_position_right; //debug
 							} else {
+								// or else, which lane has the fastest car
 								if(!gap_ahead_right){
 									if(speed_left_frt > speed_right_frt){
 										target_lane = current_lane - 1;
 										target_speed = speed_left_frt;
-										target_speed = min(MAX_SPEED, target_speed + (min_diff_left_frt - 14)/((MAX_PATH_SIZE - prev_path_size)*0.02));
+										target_speed = min(MAX_SPEED, target_speed + (min_diff_left_frt - target_dist_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
 										//cout << "left4 " << target_speed << " "; //<< final_position_left << " " << final_position_right; //debug
 									}
 								}
@@ -652,196 +575,12 @@ int main() {
 						}
 					}
 				}
-				/*auto initial_delta_diff_left = min_diff_left_frt - min_diff_ahead;
-				auto delta_speed_left = speed_left_frt - speed_ahead;
-				auto initial_delta_diff_right = min_diff_right_frt - min_diff_ahead;
-				auto delta_speed_right = speed_right_frt - speed_ahead;
-				auto relative_speed_ahead = min(7.0, MAX_SPEED - speed_ahead);
-				auto final_delta_diff_left = initial_delta_diff_left + min_diff_ahead*delta_speed_left/relative_speed_ahead;
-				auto final_delta_diff_right = initial_delta_diff_right + min_diff_ahead*delta_speed_right/relative_speed_ahead;
-				
-				// planner's brain - it checks several conditions for the traffic state variables and
-				// sets the FSM state and the targets (lane and speed) accordingly
-				if(current_lane > 0 && !traffic_left_bck && !changing_lanes){
-					//if(!traffic_left_frt){
-					//	target_lane = current_lane - 1;
-					//	target_speed = speed_left_frt;
-					//	cout << "left0"; //debug
-					//	prep_change_lanes = true;
-					//} else {
-						//if(min_diff_left_frt > min_diff_ahead + desired_diff_ahead){
-						//auto delta_diff = min_diff_left_frt - min_diff_ahead;
-						//auto delta_speed = speed_left_frt - speed_ahead;
-						//auto relative_speed_ahead = min(5.0, MAX_SPEED - speed_ahead);
-						//if(delta_diff + min_diff_ahead*(delta_speed)/relative_speed_ahead > 30){
-						if(final_delta_diff_left > 22){
-							target_lane = current_lane - 1;
-							target_speed = speed_left_frt;
-							target_speed = min(MAX_SPEED, target_speed + (min_diff_left_frt - critical_diff_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
-							cout << "left1 " << final_delta_diff_left; //debug
-							prep_change_lanes = true;
-						} *//*else {
-							if(speed_left_frt > 1.15*target_speed){
-								target_lane = current_lane - 1;
-								target_speed = speed_left_frt;
-								cout << "left2"; //debug
-								prep_change_lanes = true;
-							}
-						}*//*
-					//}
-				}
-				if(current_lane < 2 && !traffic_right_bck && !changing_lanes){
-					//if(!traffic_right_frt){
-					//	target_lane = current_lane + 1;
-					//	target_speed = speed_right_frt;
-					//	cout << "right0"; //debug
-					//	prep_change_lanes = true;
-					//} else {
-						//if(min_diff_right_frt > min_diff_ahead + desired_diff_ahead){
-						//auto delta_diff = min_diff_right_frt - min_diff_ahead;
-						//auto delta_speed = speed_right_frt - speed_ahead;
-						//auto relative_speed_ahead = min(5.0, MAX_SPEED - speed_ahead);
-						//if(delta_diff + min_diff_ahead*(delta_speed)/relative_speed_ahead > 30){
-						if(final_delta_diff_right > 22){
-							if(prep_change_lanes){
-								//if(min_diff_right_frt > min_diff_left_frt + critical_diff_ahead){
-								if(final_delta_diff_right > final_delta_diff_left + critical_diff_ahead){
-									target_lane = current_lane + 1;
-									target_speed = speed_right_frt;
-									target_speed = min(MAX_SPEED, target_speed + (min_diff_right_frt - critical_diff_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
-									cout << "right1 " << final_delta_diff_right; //debug
-								}
-							} else {
-								target_lane = current_lane + 1;
-								target_speed = speed_right_frt;
-								target_speed = min(MAX_SPEED, target_speed + (min_diff_right_frt - critical_diff_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
-								cout << "right2 " << final_delta_diff_right; //debug
-								prep_change_lanes = true;
-							}
-						} *//*else {
-							if(!prep_change_lanes){
-								if(speed_right_frt > 1.15*target_speed){
-									target_lane = current_lane + 1;
-									target_speed = speed_right_frt;
-									cout << "right3"; //debug
-									prep_change_lanes = true;
-								}
-							} else {
-								//if(min_diff_left_frt <= min_diff_ahead + desired_diff_ahead){
-								if(min_diff_left_frt - min_diff_ahead + min_diff_ahead*(speed_left_frt - speed_ahead)/5 <= 30){
-									if(speed_right_frt > speed_left_frt){
-										target_lane = current_lane + 1;
-										target_speed = speed_right_frt;
-										cout << "right4"; //debug
-									}
-								}
-							}
-						}*//*
-					//}
-				}
-				if(current_lane == 1 && traffic_left_frt && traffic_right_frt && !traffic_left_bck && !traffic_right_bck && !changing_lanes && !prep_change_lanes){
-					double time_left = LARGE_NUM;
-					double time_right = LARGE_NUM;
-					if(speed_ahead < speed_left_frt){
-						time_left = (22 - initial_delta_diff_left)/(delta_speed_left);
-						prep_change_lanes = true;
-					} else {
-						time_left = (-22 - initial_delta_diff_left)/(delta_speed_left);
-					}
-					if(speed_ahead < speed_right_frt){
-						time_right = (22 - initial_delta_diff_right)/(delta_speed_right);
-						prep_change_lanes = true;
-					} else {
-						time_right = (-22 - initial_delta_diff_right)/(delta_speed_right);
-					}
-					if(prep_change_lanes){
-						if(time_left < time_right - 0.25){
-							if(speed_ahead < speed_left_frt){
-								target_lane = current_lane - 1;
-								target_speed = speed_left_frt;
-								target_speed = min(MAX_SPEED, target_speed + (min_diff_left_frt - critical_diff_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
-								cout << "left3 " << time_left << " " << time_right; //debug
-							} else {
-								prep_change_lanes = false;
-							}
-						} else {
-							if(time_right < time_left - 0.25){
-								if(speed_ahead < speed_right_frt){
-									target_lane = current_lane + 1;
-									target_speed = speed_right_frt;
-									target_speed = min(MAX_SPEED, target_speed + (min_diff_right_frt - critical_diff_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
-									cout << "right5 " << time_left << " " << time_right; //debug
-								} else {
-									prep_change_lanes = false;
-								}
-							}
-						}
-					}
-					*//*vector<double> traffic_speeds = {speed_ahead, speed_left_frt, speed_right_frt};
-					sort(traffic_speeds.begin(), traffic_speeds.end());
-					cout << speed_ahead << " " << speed_left_frt << " " << speed_right_frt << " " << target_speed << endl;
-					//if(fabs(traffic_speeds[0]/target_speed) > 1.){
-						if(traffic_speeds[2] == speed_left_frt){
-							target_lane = current_lane - 1;
-							target_speed = speed_left_frt;
-							target_speed = min(MAX_SPEED, target_speed + (min_diff_left_frt - critical_diff_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
-							cout << "left3"; //debug
-							prep_change_lanes = true;
-						}
-						if(traffic_speeds[2] == speed_right_frt){
-							target_lane = current_lane + 1;
-							target_speed = speed_right_frt;
-							target_speed = min(MAX_SPEED, target_speed + (min_diff_right_frt - critical_diff_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
-							cout << "right5"; //debug
-							prep_change_lanes = true;
-						}
-					//}*//*
-				}*/
 			} else {
-				/*if(false){//prep_change_lanes){
-					if(current_lane == 0){
-						if((min_diff_ahead <= max_diff_frt && final_position_ahead - final_position_right_frt > 22)||
-							(min_diff_ahead > max_diff_frt && min_diff_right_frt < max_diff_frt - 30)){
-							target_lane = 0;
-							target_speed = min(MAX_SPEED, speed_ahead + (min_diff_ahead - 17)/((MAX_PATH_SIZE - prev_path_size)*0.02));
-							prep_change_lanes = false;
-							//cout << "abort" << endl;
-						} else {
-							cout << "right0 " << min_diff_right_frt << " " << last_diff_lane1; //debug
-						}
-					}
-					if(current_lane == 2){
-						if((min_diff_ahead <= max_diff_frt && min_diff_ahead - min_diff_left_frt > 22)||
-							(min_diff_ahead > max_diff_frt && min_diff_left_frt < max_diff_frt - 30)){
-							target_lane = 2;
-							target_speed = min(MAX_SPEED, speed_ahead + (min_diff_ahead - 17)/((MAX_PATH_SIZE - prev_path_size)*0.02));
-							prep_change_lanes = false;
-							//cout << "abort" << endl;
-						} else {
-							cout << "left0 " << min_diff_left_frt << " " << last_diff_lane1; //debug
-						}
-					}
-				} else {*/
-					target_speed = min(MAX_SPEED, target_speed + (min_diff_ahead - 15)/((MAX_PATH_SIZE - prev_path_size)*0.02));
-				//}
+				// or else, accelerate the car as much as possible to get as close as 15m to the closest car ahead
+				target_speed = min(MAX_SPEED, target_speed + (min_diff_ahead - target_dist_ahead)/((MAX_PATH_SIZE - prev_path_size)*0.02));
 			}
-			/*else {
-				if(current_lane == 0 && !traffic_right_bck && !changing_lanes){
-					if(min_diff_right_frt > max_diff_frt){
-						cout << "right6"; //debug
-						target_lane = current_lane + 1;
-						prep_change_lanes = true; //make sure this is necessary!!! maybe safer without?
-					}
-				}
-				if(current_lane == 2 && !traffic_left_bck && !changing_lanes){
-					if(min_diff_left_frt > max_diff_frt){
-						cout << "left4"; //debug
-						target_lane = current_lane - 1;
-						prep_change_lanes = true; //make sure this is necessary!!! maybe safer without?
-					}
-				}
-			}*/
 			
+			// don't let the target speed get under 1 m/s - so the car won't stop completely
 			target_speed = max(1.0, target_speed);
 			
 			// if not changing lanes, check if planner is preparing to change
